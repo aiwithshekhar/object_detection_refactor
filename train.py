@@ -176,6 +176,7 @@ def train():
     # Dataloader
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
+    print (f'traning info')
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
                                              num_workers=nw,
@@ -184,6 +185,7 @@ def train():
                                              collate_fn=dataset.collate_fn)
 
     # Testloader
+    print(f'testing info')
     testloader = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path, img_size_test, batch_size * 2,
                                                                  hyp=hyp,
                                                                  rect=True,
@@ -225,12 +227,6 @@ def train():
             optimizer.param_groups[2]['lr'] = ps[0]
             if optimizer.param_groups[2].get('momentum') is not None:  # for SGD but not Adam
                 optimizer.param_groups[2]['momentum'] = ps[1]
-
-        # Update image weights (optional)
-        if dataset.image_weights:
-            w = model.class_weights.cpu().numpy() * (1 - maps) ** 2  # class weights
-            image_weights = labels_to_image_weights(dataset.labels, nc=nc, class_weights=w)
-            dataset.indices = random.choices(range(dataset.n), weights=image_weights, k=dataset.n)  # rand weighted idx
 
         mloss = torch.zeros(4).to(device)  # mean losses
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
@@ -412,7 +408,8 @@ if __name__ == '__main__':
     opt = parser.parse_args()
     opt.weights = last if opt.resume else opt.weights
     # print(opt)
-    device = torch_utils.select_device(opt.device, apex=mixed_precision, batch_size=opt.batch_size)
+    cuda = torch.cuda.is_available()
+    device = torch.device('cuda:0' if cuda else 'cpu')
     if device.type == 'cpu':
         mixed_precision = False
 

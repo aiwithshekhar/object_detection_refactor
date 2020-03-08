@@ -21,7 +21,8 @@ def test(cfg,
          dataloader=None):
     # Initialize/load model and set device
     if model is None:
-        device = torch_utils.select_device(opt.device, batch_size=batch_size)
+        cuda = torch.cuda.is_available()
+        device = torch.device('cuda:0' if cuda else 'cpu')
         verbose = opt.task == 'test'
 
         # Remove previous
