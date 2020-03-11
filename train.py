@@ -215,6 +215,7 @@ def train():
         model.train()
 
         # Prebias
+        print (f'prebias {prebias}')
         if prebias:
             if epoch < 3:  # prebias
                 ps = 0.1, 0.9  # prebias settings (lr=0.1, momentum=0.9)
@@ -236,33 +237,6 @@ def train():
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
             targets = targets.to(device)
 
-            # Hyperparameter burn-in
-            # n_burn = nb - 1  # min(nb // 5 + 1, 1000)  # number of burn-in batches
-            # if ni <= n_burn:
-            #     for m in model.named_modules():
-            #         if m[0].endswith('BatchNorm2d'):
-            #             m[1].momentum = 1 - i / n_burn * 0.99  # BatchNorm2d momentum falls from 1 - 0.01
-            #     g = (i / n_burn) ** 4  # gain rises from 0 - 1
-            #     for x in optimizer.param_groups:
-            #         x['lr'] = hyp['lr0'] * g
-            #         x['weight_decay'] = hyp['weight_decay'] * g
-
-            # Plot images with bounding boxes
-            if ni == 0:
-                fname = 'train_batch%g.png' % i
-                plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
-                if tb_writer:
-                    tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
-
-            # Multi-Scale training
-            if opt.multi_scale:
-                if ni / accumulate % 1 == 0:  #  adjust img_size (67% - 150%) every 1 batch
-                    img_size = random.randrange(img_sz_min, img_sz_max + 1) * 32
-                sf = img_size / max(imgs.shape[2:])  # scale factor
-                if sf != 1:
-                    ns = [math.ceil(x * sf / 32.) * 32 for x in imgs.shape[2:]]  # new shape (stretched to 32-multiple)
-                    imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
-
             # Run model
             pred = model(imgs)
 
@@ -276,11 +250,7 @@ def train():
             loss *= batch_size / 64
 
             # Compute gradient
-            if mixed_precision:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
+            loss.backward()
 
             # Accumulate gradient for x batches before optimizing
             if ni % accumulate == 0:
@@ -415,7 +385,7 @@ if __name__ == '__main__':
 
     # scale hyp['obj'] by img_size (evolved at 320)
     # hyp['obj'] *= opt.img_size[0] / 320.
-
+    print (f'evolve {opt.evolve}')
     tb_writer = None
     if not opt.evolve:  # Train normally
         try:
@@ -427,55 +397,3 @@ if __name__ == '__main__':
             pass
 
         train()  # train normally
-
-    else:  # Evolve hyperparameters (optional)
-        opt.notest, opt.nosave = True, True  # only test/save final epoch
-        if opt.bucket:
-            os.system('gsutil cp gs://%s/evolve.txt .' % opt.bucket)  # download evolve.txt if exists
-
-        for _ in range(1):  # generations to evolve
-            if os.path.exists('evolve.txt'):  # if evolve.txt exists: select best hyps and mutate
-                # Select parent(s)
-                parent = 'single'  # parent selection method: 'single' or 'weighted'
-                x = np.loadtxt('evolve.txt', ndmin=2)
-                n = min(5, len(x))  # number of previous results to consider
-                x = x[np.argsort(-fitness(x))][:n]  # top n mutations
-                w = fitness(x) - fitness(x).min()  # weights
-                if parent == 'single' or len(x) == 1:
-                    # x = x[random.randint(0, n - 1)]  # random selection
-                    x = x[random.choices(range(n), weights=w)[0]]  # weighted selection
-                elif parent == 'weighted':
-                    x = (x * w.reshape(n, 1)).sum(0) / w.sum()  # weighted combination
-
-                # Mutate
-                method, mp, s = 3, 0.9, 0.2  # method, mutation probability, sigma
-                npr = np.random
-                npr.seed(int(time.time()))
-                g = np.array([1, 1, 1, 1, 1, 1, 1, 0, .1, 1, 0, 1, 1, 1, 1, 1, 1, 1])  # gains
-                ng = len(g)
-                if method == 1:
-                    v = (npr.randn(ng) * npr.random() * g * s + 1) ** 2.0
-                elif method == 2:
-                    v = (npr.randn(ng) * npr.random(ng) * g * s + 1) ** 2.0
-                elif method == 3:
-                    v = np.ones(ng)
-                    while all(v == 1):  # mutate until a change occurs (prevent duplicates)
-                        # v = (g * (npr.random(ng) < mp) * npr.randn(ng) * s + 1) ** 2.0
-                        v = (g * (npr.random(ng) < mp) * npr.randn(ng) * npr.random() * s + 1).clip(0.3, 3.0)
-                for i, k in enumerate(hyp.keys()):  # plt.hist(v.ravel(), 300)
-                    hyp[k] = x[i + 7] * v[i]  # mutate
-
-            # Clip to limits
-            keys = ['lr0', 'iou_t', 'momentum', 'weight_decay', 'hsv_s', 'hsv_v', 'translate', 'scale', 'fl_gamma']
-            limits = [(1e-5, 1e-2), (0.00, 0.70), (0.60, 0.98), (0, 0.001), (0, .9), (0, .9), (0, .9), (0, .9), (0, 3)]
-            for k, v in zip(keys, limits):
-                hyp[k] = np.clip(hyp[k], v[0], v[1])
-
-            # Train mutation
-            results = train()
-
-            # Write mutation results
-            print_mutation(hyp, results, opt.bucket)
-
-            # Plot results
-            # plot_evolution_results(hyp)

@@ -131,26 +131,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         img_path = self.img_files[index]
         label_path = self.label_files[index]
 
-        hyp = self.hyp
-        mosaic = False  # load 4 images at a time into a mosaic (only during training)
-
         # Load image
-        img = self.imgs[index]
-        if img is None:  # not cached
-            img_path = self.img_files[index]
-            img = cv2.imread(img_path)  # BGR
-            assert img is not None, 'Image Not Found ' + img_path
-
-            h0, w0 = img.shape[:2]  # orig hw
-            r = self.img_size / max(h0, w0)  # resize image to img_size
-            if r < 1 or (self.augment and (r != 1)):  # always resize down, only resize up if training with augmentation
-                interp = cv2.INTER_LINEAR if self.augment else cv2.INTER_AREA  # LINEAR for training, AREA for testing
-                img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
-                (h,w) = img.shape[:2]  # img, hw_original, hw_resized
+        img, (h0, w0), (h, w) = load_image(self, index)
 
         # Letterbox
-        shape = self.img_size  # final letterboxed shape
-
+        shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
         img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
         shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
@@ -158,6 +143,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         labels = []
         if os.path.isfile(label_path):
             x = self.labels[index]
+            if x is None:  # labels not preloaded
+                with open(label_path, 'r') as f:
+                    x = np.array([x.split() for x in f.read().splitlines()], dtype=np.float32)
+
             if x.size > 0:
                 # Normalized xywh to pixel xyxy format
                 labels = x.copy()
@@ -167,7 +156,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 labels[:, 4] = ratio[1] * h * (x[:, 2] + x[:, 4] / 2) + pad[1]
 
         nL = len(labels)  # number of labels
-        print (f'nL {nL}')
+
         if nL:
             # convert xyxy to xywh
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])
@@ -207,6 +196,20 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
+
+def load_image(self, index):
+    # loads 1 image from dataset, returns img, original hw, resized hw
+    img = self.imgs[index]
+    if img is None:  # not cached
+        img_path = self.img_files[index]
+        img = cv2.imread(img_path)  # BGR
+        assert img is not None, 'Image Not Found ' + img_path
+        h0, w0 = img.shape[:2]  # orig hw
+        r = self.img_size / max(h0, w0)  # resize image to img_size
+        if r < 1 or (self.augment and (r != 1)):  # always resize down, only resize up if training with augmentation
+            interp = cv2.INTER_LINEAR if self.augment else cv2.INTER_AREA  # LINEAR for training, AREA for testing
+            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
 
 def letterbox(img, new_shape=(416, 416), color=(128, 128, 128),auto=False, scaleFill=False, scaleup=True, interp=cv2.INTER_AREA):
 

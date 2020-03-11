@@ -61,20 +61,6 @@ def labels_to_class_weights(labels, nc=80):
     weights /= weights.sum()  # normalize
     return torch.from_numpy(weights)
 
-def coco_class_weights():  # frequency of each class in coco train2014
-    n = [187437, 4955, 30920, 6033, 3838, 4332, 3160, 7051, 7677, 9167, 1316, 1372, 833, 6757, 7355, 3302, 3776, 4671,
-         6769, 5706, 3908, 903, 3686, 3596, 6200, 7920, 8779, 4505, 4272, 1862, 4698, 1962, 4403, 6659, 2402, 2689,
-         4012, 4175, 3411, 17048, 5637, 14553, 3923, 5539, 4289, 10084, 7018, 4314, 3099, 4638, 4939, 5543, 2038, 4004,
-         5053, 4578, 27292, 4113, 5931, 2905, 11174, 2873, 4036, 3415, 1517, 4122, 1980, 4464, 1190, 2302, 156, 3933,
-         1877, 17630, 4337, 4624, 1075, 3468, 135, 1380]
-    weights = 1 / torch.Tensor(n)
-    weights /= weights.sum()
-    # with open('data/coco.names', 'r') as f:
-    #     for k, v in zip(f.read().splitlines(), n):
-    #         print('%20s: %g' % (k, v))
-    return weights
-
-
 def coco80_to_coco91_class():  # converts 80-index (val2014) to 91-index (paper)
     # https://tech.amikelive.com/node-718/what-object-categories-labels-are-in-coco-dataset/
     # a = np.loadtxt('data/coco.names', dtype='str', delimiter='\n')
@@ -85,16 +71,6 @@ def coco80_to_coco91_class():  # converts 80-index (val2014) to 91-index (paper)
          35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
          64, 65, 67, 70, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 84, 85, 86, 87, 88, 89, 90]
     return x
-
-
-def weights_init_normal(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        torch.nn.init.normal_(m.weight.data, 0.0, 0.03)
-    elif classname.find('BatchNorm2d') != -1:
-        torch.nn.init.normal_(m.weight.data, 1.0, 0.03)
-        torch.nn.init.constant_(m.bias.data, 0.0)
-
 
 def xyxy2xywh(x):
     # Convert bounding box format from [x1, y1, x2, y2] to [x, y, w, h]
@@ -129,7 +105,6 @@ def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
     coords[:, :4] /= gain
     clip_coords(coords, img0_shape)
     return coords
-
 
 def clip_coords(boxes, img_shape):
     # Clip bounding xyxy bounding boxes to image shape (height, width)
@@ -418,7 +393,7 @@ def compute_loss(p, targets, model, giou_flag=True):  # predictions, targets, mo
     loss = lbox + lobj + lcls
     return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
 
-
+# used is LOSS CALC
 def build_targets(model, targets):
     # targets = [image, class, x, y, w, h]
 
@@ -621,108 +596,13 @@ def print_model_biases(model):
                                                '%5.2f+/-%-5.2f' % (b[:, 4].mean(), b[:, 4].std()),
                                                '%5.2f+/-%-5.2f' % (b[:, 5:].mean(), b[:, 5:].std())))
 
-def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(608, 608)):
-    # from utils.utils import *; _ = kmean_anchors()
-    # Produces a list of target kmeans suitable for use in *.cfg files
-    from utils.datasets import LoadImagesAndLabels
-    thr = 0.20  # IoU threshold
-
-    def print_results(k):
-        k = k[np.argsort(k.prod(1))]  # sort small to large
-        iou = wh_iou(wh, torch.Tensor(k))
-        max_iou = iou.max(1)[0]
-        bpr, aat = (max_iou > thr).float().mean(), (iou > thr).float().mean() * n  # best possible recall, anch > thr
-        print('%.2f iou_thr: %.3f best possible recall, %.2f anchors > thr' % (thr, bpr, aat))
-        print('n=%g, img_size=%s, IoU_all=%.3f/%.3f-mean/best, IoU>thr=%.3f-mean: ' %
-              (n, img_size, iou.mean(), max_iou.mean(), iou[iou > thr].mean()), end='')
-        for i, x in enumerate(k):
-            print('%i,%i' % (round(x[0]), round(x[1])), end=',  ' if i < len(k) - 1 else '\n')  # use in *.cfg
-        return k
-
-    def fitness(k):  # mutation fitness
-        iou = wh_iou(wh, torch.Tensor(k))  # iou
-        max_iou = iou.max(1)[0]
-        return max_iou.mean()  # product
-
-    # Get label wh
-    wh = []
-    dataset = LoadImagesAndLabels(path, augment=True, rect=True, cache_labels=True)
-    nr = 1 if img_size[0] == img_size[1] else 10  # number augmentation repetitions
-    for s, l in zip(dataset.shapes, dataset.labels):
-        wh.append(l[:, 3:5] * (s / s.max()))  # image normalized to letterbox normalized wh
-    wh = np.concatenate(wh, 0).repeat(nr, axis=0)  # augment 10x
-    wh *= np.random.uniform(img_size[0], img_size[1], size=(wh.shape[0], 1))  # normalized to pixels (multi-scale)
-    wh = wh[(wh > 2.0).all(1)]  # remove below threshold boxes (< 2 pixels wh)
-
-    # Darknet yolov3.cfg anchors
-    use_darknet = False
-    if use_darknet and n == 9:
-        k = np.array([[10, 13], [16, 30], [33, 23], [30, 61], [62, 45], [59, 119], [116, 90], [156, 198], [373, 326]])
-    else:
-        # Kmeans calculation
-        from scipy.cluster.vq import kmeans
-        print('Running kmeans for %g anchors on %g points...' % (n, len(wh)))
-        s = wh.std(0)  # sigmas for whitening
-        k, dist = kmeans(wh / s, n, iter=30)  # points, mean distance
-        k *= s
-    wh = torch.Tensor(wh)
-    k = print_results(k)
-
-    # # Plot
-    # k, d = [None] * 20, [None] * 20
-    # for i in tqdm(range(1, 21)):
-    #     k[i-1], d[i-1] = kmeans(wh / s, i)  # points, mean distance
-    # fig, ax = plt.subplots(1, 2, figsize=(14, 7))
-    # ax = ax.ravel()
-    # ax[0].plot(np.arange(1, 21), np.array(d) ** 2, marker='.')
-    # fig, ax = plt.subplots(1, 2, figsize=(14, 7))  # plot wh
-    # ax[0].hist(wh[wh[:, 0]<100, 0],400)
-    # ax[1].hist(wh[wh[:, 1]<100, 1],400)
-    # fig.tight_layout()
-    # fig.savefig('wh.png', dpi=200)
-
-    # Evolve
-    npr = np.random
-    f, sh, ng, mp, s = fitness(k), k.shape, 1000, 0.9, 0.1  # fitness, generations, mutation prob, sigma
-    for _ in tqdm(range(ng), desc='Evolving anchors'):
-        v = np.ones(sh)
-        while (v == 1).all():  # mutate until a change occurs (prevent duplicates)
-            v = ((npr.random(sh) < mp) * npr.random() * npr.randn(*sh) * s + 1).clip(0.3, 3.0)  # 98.6, 61.6
-        kg = (k.copy() * v).clip(min=2.0)
-        fg = fitness(kg)
-        if fg > f:
-            f, k = fg, kg.copy()
-            print_results(k)
-    k = print_results(k)
-
-    return k
-
-
-def print_mutation(hyp, results, bucket=''):
-    # Print mutation results to evolve.txt (for use with train.py --evolve)
-    a = '%10s' * len(hyp) % tuple(hyp.keys())  # hyperparam keys
-    b = '%10.3g' * len(hyp) % tuple(hyp.values())  # hyperparam values
-    c = '%10.4g' * len(results) % results  # results (P, R, mAP, F1, test_loss)
-    print('\n%s\n%s\nEvolved fitness: %s\n' % (a, b, c))
-
-    if bucket:
-        os.system('gsutil cp gs://%s/evolve.txt .' % bucket)  # download evolve.txt
-
-    with open('evolve.txt', 'a') as f:  # append result
-        f.write(c + b + '\n')
-    x = np.unique(np.loadtxt('evolve.txt', ndmin=2), axis=0)  # load unique rows
-    np.savetxt('evolve.txt', x[np.argsort(-fitness(x))], '%10.3g')  # save sort by fitness
-
-    if bucket:
-        os.system('gsutil cp evolve.txt gs://%s' % bucket)  # upload evolve.txt
-
 def fitness(x):
     # Returns fitness (for use with results.txt or evolve.txt)
     w = [0.0, 0.01, 0.99, 0.00]  # weights for [P, R, mAP, F1]@0.5 or [P, R, mAP@0.5, mAP@0.5:0.95]
     return (x[:, :4] * w).sum(1)
 
 
-# Plotting functions ---------------------------------------------------------------------------------------------------
+# Plotting functions --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line thickness
@@ -735,27 +615,6 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
         cv2.rectangle(img, c1, c2, color, -1)  # filled
         cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
-
-
-def plot_wh_methods():  # from utils.utils import *; plot_wh_methods()
-    # Compares the two methods for width-height anchor multiplication
-    # https://github.com/ultralytics/yolov3/issues/168
-    x = np.arange(-4.0, 4.0, .1)
-    ya = np.exp(x)
-    yb = torch.sigmoid(torch.from_numpy(x)).numpy() * 2
-
-    fig = plt.figure(figsize=(6, 3), dpi=150)
-    plt.plot(x, ya, '.-', label='yolo method')
-    plt.plot(x, yb ** 2, '.-', label='^2 power method')
-    plt.plot(x, yb ** 2.5, '.-', label='^2.5 power method')
-    plt.xlim(left=-4, right=4)
-    plt.ylim(bottom=0, top=6)
-    plt.xlabel('input')
-    plt.ylabel('output')
-    plt.legend()
-    fig.tight_layout()
-    fig.savefig('comparison.png', dpi=200)
-
 
 def plot_images(imgs, targets, paths=None, fname='images.png'):
     # Plots training images overlaid with targets

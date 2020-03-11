@@ -272,11 +272,13 @@ class Darknet(nn.Module):
                 print(i, x.shape)
 
         if self.training:
+            print (f'I M IN TRAIN {output[0].shape}')
             return output
         elif ONNX_EXPORT:
             x = [torch.cat(x, 0) for x in zip(*output)]
             return x[0], torch.cat(x[1:3], 1)  # scores, boxes: 3780x80, 3780x4
         else:
+            print(f'I M IN TEST {len(output), len(output[0]), output[0][0].shape, output[0][1].shape}')
             io, p = zip(*output)  # inference output, training output
             return torch.cat(io, 1), p
 
