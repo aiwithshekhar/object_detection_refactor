@@ -20,24 +20,6 @@ help_url = 'https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data'
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4']
 
-# Get orientation exif tag
-for orientation in ExifTags.TAGS.keys():
-    if ExifTags.TAGS[orientation] == 'Orientation':
-        break
-
-def exif_size(img):
-    # Returns exif-corrected PIL size
-    s = img.size  # (width, height)
-    try:
-        rotation = dict(img._getexif().items())[orientation]
-        if rotation == 6:  # rotation 270
-            s = (s[1], s[0])
-        elif rotation == 8:  # rotation 90
-            s = (s[1], s[0])
-    except:
-        pass
-    return s
-
 class LoadImages:  # for inference
     def __init__(self, path, img_size=416, half=False):
         path = str(Path(path))  # os-agnostic
@@ -93,7 +75,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         path = str(Path(path))  # os-agnostic
         assert os.path.isfile(path), 'File not found %s. See %s' % (path, help_url)
         with open(path, 'r') as f:
-
             self.img_files = [x for x in f.read().splitlines() if os.path.splitext(x)[-1].lower() in img_formats]
 
         n = len(self.img_files)
@@ -138,21 +119,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         nd += 1  # print('WARNING: duplicate rows in %s' % self.label_files[i])  # duplicate rows
                     self.labels[i] = l
                     nf += 1  # file found
-
                 else:
                     ne += 1  # print('empty labels for image %s' % self.img_files[i])  # file empty
-
                 pbar.desc = 'Caching labels (%g found, %g missing, %g empty, %g duplicate, for %g images)' % (nf, nm, ne, nd, n)
-
-        # Detect corrupted images https://medium.com/joelthchao/programmatically-detect-corrupted-image-8c1b2006c3d3
-        detect_corrupted_images = False
-        if detect_corrupted_images:
-            from skimage import io  # conda install -c conda-forge scikit-image
-            for file in tqdm(self.img_files, desc='Detecting corrupted images'):
-                try:
-                    _ = io.imread(file)
-                except:
-                    print('Corrupted image detected: %s' % file)
 
     def __len__(self):
         return len(self.img_files)
@@ -166,7 +135,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         mosaic = False  # load 4 images at a time into a mosaic (only during training)
 
         # Load image
-
         img = self.imgs[index]
         if img is None:  # not cached
             img_path = self.img_files[index]
@@ -181,14 +149,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 (h,w) = img.shape[:2]  # img, hw_original, hw_resized
 
         # Letterbox
-
         shape = self.img_size  # final letterboxed shape
+
         img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
         shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
         # Load labels
         labels = []
-
         if os.path.isfile(label_path):
             x = self.labels[index]
             if x.size > 0:
@@ -199,17 +166,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 labels[:, 3] = ratio[0] * w * (x[:, 1] + x[:, 3] / 2) + pad[0]
                 labels[:, 4] = ratio[1] * h * (x[:, 2] + x[:, 4] / 2) + pad[1]
 
-        if self.augment:
-            # Augment imagespace
-            if not mosaic:
-
-                img, labels = random_affine(img, labels,
-                                            degrees=hyp['degrees'],
-                                            translate=hyp['translate'],
-                                            scale=hyp['scale'],
-                                            shear=hyp['shear'])
-
         nL = len(labels)  # number of labels
+        print (f'nL {nL}')
         if nL:
             # convert xyxy to xywh
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])
@@ -250,102 +208,23 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
 
-def letterbox(img, new_shape=(416, 416), color=(128, 128, 128),
-              auto=True, scaleFill=False, scaleup=True, interp=cv2.INTER_AREA):
-    # Resize image to a 32-pixel-multiple rectangle https://github.com/ultralytics/yolov3/issues/232
+def letterbox(img, new_shape=(416, 416), color=(128, 128, 128),auto=False, scaleFill=False, scaleup=True, interp=cv2.INTER_AREA):
+
     shape = img.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
-
     # Scale ratio (new / old)
     r = max(new_shape) / max(shape)
-    if not scaleup:  # only scale down, do not scale up (for better test mAP)
-        r = min(r, 1.0)
 
     # Compute padding
     ratio = r, r  # width, height ratios
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
     dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
-    if auto:  # minimum rectangle
-        dw, dh = np.mod(dw, 32), np.mod(dh, 32)  # wh padding
-    elif scaleFill:  # stretch
-        dw, dh = 0.0, 0.0
-        new_unpad = new_shape
-        ratio = new_shape[0] / shape[1], new_shape[1] / shape[0]  # width, height ratios
-
     dw /= 2  # divide padding into 2 sides
     dh /= 2
-
     if shape[::-1] != new_unpad:  # resize
         img = cv2.resize(img, new_unpad, interpolation=interp)  # INTER_AREA is better, INTER_LINEAR is faster
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return img, ratio, (dw, dh)
-
-
-def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
-    # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
-    # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
-
-    if targets is None:  # targets = [cls, xyxy]
-        targets = []
-    height = img.shape[0] + border * 2
-    width = img.shape[1] + border * 2
-
-    # Rotation and Scale
-    R = np.eye(3)
-    a = random.uniform(-degrees, degrees)
-    # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
-    s = random.uniform(1 - scale, 1 + scale)
-    R[:2] = cv2.getRotationMatrix2D(angle=a, center=(img.shape[1] / 2, img.shape[0] / 2), scale=s)
-
-    # Translation
-    T = np.eye(3)
-    T[0, 2] = random.uniform(-translate, translate) * img.shape[0] + border  # x translation (pixels)
-    T[1, 2] = random.uniform(-translate, translate) * img.shape[1] + border  # y translation (pixels)
-
-    # Shear
-    S = np.eye(3)
-    S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # x shear (deg)
-    S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # y shear (deg)
-
-    # Combined rotation matrix
-    M = S @ T @ R  # ORDER IS IMPORTANT HERE!!
-    changed = (border != 0) or (M != np.eye(3)).any()
-    if changed:
-        img = cv2.warpAffine(img, M[:2], dsize=(width, height), flags=cv2.INTER_AREA, borderValue=(128, 128, 128))
-
-    # Transform label coordinates
-    n = len(targets)
-    if n:
-        # warp points
-        xy = np.ones((n * 4, 3))
-        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
-        xy = (xy @ M.T)[:, :2].reshape(n, 8)
-
-        # create new boxes
-        x = xy[:, [0, 2, 4, 6]]
-        y = xy[:, [1, 3, 5, 7]]
-        xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
-
-        # reject warped points outside of image
-        xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, width)
-        xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
-        w = xy[:, 2] - xy[:, 0]
-        h = xy[:, 3] - xy[:, 1]
-        area = w * h
-        area0 = (targets[:, 3] - targets[:, 1]) * (targets[:, 4] - targets[:, 2])
-        ar = np.maximum(w / (h + 1e-16), h / (w + 1e-16))  # aspect ratio
-        i = (w > 4) & (h > 4) & (area / (area0 + 1e-16) > 0.2) & (ar < 10)
-
-        targets = targets[i]
-        targets[:, 1:5] = xy[i]
-
-    return img, targets
-
-def create_folder(path='./new_folder'):
-    # Create folder
-    if os.path.exists(path):
-        shutil.rmtree(path)  # delete output folder
-    os.makedirs(path)  # make new output folder

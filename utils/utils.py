@@ -115,27 +115,6 @@ def xywh2xyxy(x):
     y[:, 3] = x[:, 1] + x[:, 3] / 2
     return y
 
-
-# def xywh2xyxy(box):
-#     # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2]
-#     if isinstance(box, torch.Tensor):
-#         x, y, w, h = box.t()
-#         return torch.stack((x - w / 2, y - h / 2, x + w / 2, y + h / 2)).t()
-#     else:  # numpy
-#         x, y, w, h = box.T
-#         return np.stack((x - w / 2, y - h / 2, x + w / 2, y + h / 2)).T
-#
-#
-# def xyxy2xywh(box):
-#     # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h]
-#     if isinstance(box, torch.Tensor):
-#         x1, y1, x2, y2 = box.t()
-#         return torch.stack(((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1)).t()
-#     else:  # numpy
-#         x1, y1, x2, y2 = box.T
-#         return np.stack(((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1)).T
-
-
 def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
     # Rescale coords (xyxy) from img1_shape to img0_shape
     if ratio_pad is None:  # calculate from img0_shape
@@ -642,29 +621,6 @@ def print_model_biases(model):
                                                '%5.2f+/-%-5.2f' % (b[:, 4].mean(), b[:, 4].std()),
                                                '%5.2f+/-%-5.2f' % (b[:, 5:].mean(), b[:, 5:].std())))
 
-
-def strip_optimizer(f='weights/last.pt'):  # from utils.utils import *; strip_optimizer()
-    # Strip optimizer from *.pt files for lighter files (reduced by 2/3 size)
-    x = torch.load(f, map_location=torch.device('cpu'))
-    x['optimizer'] = None
-    # x['training_results'] = None  # uncomment to create a backbone
-    # x['epoch'] = -1  # uncomment to create a backbone
-    torch.save(x, f)
-
-
-def create_backbone(f='weights/last.pt'):  # from utils.utils import *; create_backbone()
-    # create a backbone from a *.pt file
-    x = torch.load(f, map_location=torch.device('cpu'))
-    x['optimizer'] = None
-    x['training_results'] = None
-    x['epoch'] = -1
-    for p in x['model'].values():
-        try:
-            p.requires_grad = True
-        except:
-            pass
-    torch.save(x, 'weights/backbone.pt')
-
 def kmean_anchors(path='../coco/train2017.txt', n=9, img_size=(608, 608)):
     # from utils.utils import *; _ = kmean_anchors()
     # Produces a list of target kmeans suitable for use in *.cfg files
@@ -825,85 +781,6 @@ def plot_images(imgs, targets, paths=None, fname='images.png'):
     fig.tight_layout()
     fig.savefig(fname, dpi=200)
     plt.close()
-
-
-def plot_test_txt():  # from utils.utils import *; plot_test()
-    # Plot test.txt histograms
-    x = np.loadtxt('test.txt', dtype=np.float32)
-    box = xyxy2xywh(x[:, :4])
-    cx, cy = box[:, 0], box[:, 1]
-
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    ax.hist2d(cx, cy, bins=600, cmax=10, cmin=0)
-    ax.set_aspect('equal')
-    fig.tight_layout()
-    plt.savefig('hist2d.png', dpi=300)
-
-    fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-    ax[0].hist(cx, bins=600)
-    ax[1].hist(cy, bins=600)
-    fig.tight_layout()
-    plt.savefig('hist1d.png', dpi=200)
-
-
-def plot_targets_txt():  # from utils.utils import *; plot_targets_txt()
-    # Plot test.txt histograms
-    x = np.loadtxt('targets.txt', dtype=np.float32)
-    x = x.T
-
-    s = ['x targets', 'y targets', 'width targets', 'height targets']
-    fig, ax = plt.subplots(2, 2, figsize=(8, 8))
-    ax = ax.ravel()
-    for i in range(4):
-        ax[i].hist(x[i], bins=100, label='%.3g +/- %.3g' % (x[i].mean(), x[i].std()))
-        ax[i].legend()
-        ax[i].set_title(s[i])
-    fig.tight_layout()
-    plt.savefig('targets.jpg', dpi=200)
-
-
-def plot_evolution_results(hyp):  # from utils.utils import *; plot_evolution_results(hyp)
-    # Plot hyperparameter evolution results in evolve.txt
-    x = np.loadtxt('evolve.txt', ndmin=2)
-    f = fitness(x)
-    weights = (f - f.min()) ** 2  # for weighted results
-    fig = plt.figure(figsize=(12, 10))
-    matplotlib.rc('font', **{'size': 8})
-    for i, (k, v) in enumerate(hyp.items()):
-        y = x[:, i + 7]
-        # mu = (y * weights).sum() / weights.sum()  # best weighted result
-        mu = y[f.argmax()]  # best single result
-        plt.subplot(4, 5, i + 1)
-        plt.plot(mu, f.max(), 'o', markersize=10)
-        plt.plot(y, f, '.')
-        plt.title('%s = %.3g' % (k, mu), fontdict={'size': 9})  # limit to 40 characters
-        print('%15s: %.3g' % (k, mu))
-    fig.tight_layout()
-    plt.savefig('evolve.png', dpi=200)
-
-
-def plot_results_overlay(start=0, stop=0):  # from utils.utils import *; plot_results_overlay()
-    # Plot training results files 'results*.txt', overlaying train and val losses
-    s = ['train', 'train', 'train', 'Precision', 'mAP@0.5', 'val', 'val', 'val', 'Recall', 'F1']  # legends
-    t = ['GIoU', 'Objectness', 'Classification', 'P-R', 'mAP-F1']  # titles
-    for f in sorted(glob.glob('results*.txt') + glob.glob('../../Downloads/results*.txt')):
-        results = np.loadtxt(f, usecols=[2, 3, 4, 8, 9, 12, 13, 14, 10, 11], ndmin=2).T
-        n = results.shape[1]  # number of rows
-        x = range(start, min(stop, n) if stop else n)
-        fig, ax = plt.subplots(1, 5, figsize=(14, 3.5))
-        ax = ax.ravel()
-        for i in range(5):
-            for j in [i, i + 5]:
-                y = results[j, x]
-                if i in [0, 1, 2]:
-                    y[y == 0] = np.nan  # dont show zero loss values
-                ax[i].plot(x, y, marker='.', label=s[j])
-            ax[i].set_title(t[i])
-            ax[i].legend()
-            ax[i].set_ylabel(f) if i == 0 else None  # add filename
-        fig.tight_layout()
-        fig.savefig(f.replace('.txt', '.png'), dpi=200)
-
 
 def plot_results(start=0, stop=0, bucket='', id=()):  # from utils.utils import *; plot_results()
     # Plot training results files 'results*.txt'

@@ -1,27 +1,30 @@
+import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
-# s = [np.zeros(())]
-# # s=[[]*10]
-# val=np.array([10,20,30,40,50,10,1,])
+lab='/media/persistance/storage/deep _learning/yolov3/data/coco/labels/val2014/COCO_val2014_000000000074.txt'
+img=lab.replace('labels','images').split('.')[0]+'.jpg'
+
+# print (img)
+img=cv2.imread(img)
+hei, wid, _=img.shape
+
+with open(lab) as file:
+    vals=file.read().split('\n')
+vals=np.array([i.split(' ') for i in vals if i])
+
+def convert(vals):
+    x, width = round(vals[1]*wid), round(vals[3]*wid)
+    y, height = round(vals[2]*hei), round(vals[4]*hei)
+    st= round(x-(width/2)) , round(y-(height/2))
+    end= round(x+(width/2)), round(y+(height/2))
+    return st, end
 #
-# for i in range (len(s)):
-#     s[i]=val
-#     # val+=100
-l=np.array([[1,2,3,4,5],[11,21,31,41,51],[21,22,23,24,25]])
-l1=np.array([[1,2,3,4,5],[11,21,31,41,51],[21,22,23,24,25]])
-# l2=np.ones((0,5))
-
-
-d = [np.zeros((0,5))]*3
-
-d[0]=l
-# d[1]=l2
-d[2]=l1
-
-
-# for i in d:
-#     print (type(i))
-# labels = np.concatenate(d, 0)
-#
-for i in d:
-    print (i.shape)
+color = (255, 0, 0)
+thickness = 2
+# #
+for j in vals:
+    st, end=convert(list(map(float, j)))
+    image = cv2.rectangle(img, st, end, color, thickness)
+cv2.imshow('show', image)
+cv2.waitKey(0)
