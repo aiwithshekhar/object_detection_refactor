@@ -35,10 +35,9 @@ def test(cfg,
 
         # Load weights
         # attempt_download(weights)
+        # print(f'len {len(weights)}')
         if weights.endswith('.pt'):  # pytorch format
             model.load_state_dict(torch.load(weights, map_location=device)['model'])
-        else:  # darknet format
-            load_darknet_weights(model, weights)
 
         if torch.cuda.device_count() > 1:
             model = nn.DataParallel(model)
@@ -92,9 +91,11 @@ def test(cfg,
                 loss += compute_loss(train_out, targets, model)[1][:3].cpu()  # GIoU, obj, cls
 
             # Run NMS
-            output = non_max_suppression(inf_out, conf_thres=conf_thres, iou_thres=iou_thres)
+            output = non_max_suppression(inf_out, conf_thres=conf_thres, nms_thres=iou_thres)
+            # print (f'nms {output.shape}')
 
         # Statistics per image
+
         for si, pred in enumerate(output):
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
@@ -211,7 +212,7 @@ def test(cfg,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='test.py')
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='*.cfg path')
-    parser.add_argument('--data', type=str, default='data/coco/coco_10.data', help='*.data path')
+    parser.add_argument('--data', type=str, default='data/coco/coco1.data', help='*.data path')
     parser.add_argument('--weights', type=str, default='weights/yolov3.pt', help='path to weights file')
     parser.add_argument('--batch-size', type=int, default=32, help='size of each image batch')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')

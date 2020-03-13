@@ -9,11 +9,7 @@ from models import *
 from utils.datasets import *
 from utils.utils import *
 
-mixed_precision = True
-try:  # Mixed precision training https://github.com/NVIDIA/apex
-    from apex import amp
-except:
-    mixed_precision = False  # not installed
+mixed_precision = False  # not installed
 
 wdir = 'weights' + os.sep  # weights dir
 last = wdir + 'last.pt'
@@ -130,12 +126,6 @@ def train():
 
         start_epoch = chkpt['epoch'] + 1
         del chkpt
-
-    elif len(weights) > 0:  # darknet format
-        # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
-        load_darknet_weights(model, weights)
-
-    # Scheduler https://github.com/ultralytics/yolov3/issues/238
 
     scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[round(opt.epochs * x) for x in [0.8, 0.9]], gamma=0.1)
     scheduler.last_epoch = start_epoch - 1
@@ -358,7 +348,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=1)  # effective bs = batch_size * accumulate = 16 * 4 = 64
     parser.add_argument('--accumulate', type=int, default=1, help='batches to accumulate before optimizing')
     parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='*.cfg path')
-    parser.add_argument('--data', type=str, default='data/coco/coco_10.data', help='*.data path')
+    parser.add_argument('--data', type=str, default='data/coco1.data', help='*.data path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img-size', nargs='+', type=int, default=[416], help='train and test image-sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
@@ -385,7 +375,6 @@ if __name__ == '__main__':
 
     # scale hyp['obj'] by img_size (evolved at 320)
     # hyp['obj'] *= opt.img_size[0] / 320.
-    print (f'evolve {opt.evolve}')
     tb_writer = None
     if not opt.evolve:  # Train normally
         try:
