@@ -73,7 +73,6 @@ class YOLOLayer(nn.Module):
         self.arc = arc
 
     def forward(self, p, img_size, var=None):
-
         bs, _, ny, nx = p.shape  # bs, 255, 13, 13
 
         if (self.nx, self.ny) != (nx, ny):
@@ -105,20 +104,18 @@ class Darknet(nn.Module):
         self.module_defs = parse_model_cfg(cfg)
         self.module_list, self.routs = create_modules(self.module_defs, img_size, arc)
         self.yolo_layers = get_yolo_layers(self)
-        print(f'@@@ {self.yolo_layers}')
-        # Darknet Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
-        self.version = np.array([0, 2, 5], dtype=np.int32)  # (int32) version info: major, minor, revision
-        self.seen = np.array([0], dtype=np.int64)  # (int64) number of images seen during training
 
     def forward(self, x, var=None):
         img_size = x.shape[-2:]
         output, layer_outputs = [], []
         verbose = False
+
         if verbose:
             print('0', x.shape)
 
         for i, (mdef, module) in enumerate(zip(self.module_defs, self.module_list)):
             mtype = mdef['type']
+
             if mtype in ['convolutional', 'upsample', 'maxpool']:
                 x = module(x)
             elif mtype == 'route':
@@ -133,7 +130,7 @@ class Darknet(nn.Module):
                     except:  # apply stride 2 for darknet reorg layer
                         layer_outputs[layers[1]] = F.interpolate(layer_outputs[layers[1]], scale_factor=[0.5, 0.5])
                         x = torch.cat([layer_outputs[i] for i in layers], 1)
-                    # print(''), [print(layer_outputs[i].shape) for i in layers], print(x.shape)
+
             elif mtype == 'shortcut':
                 j = int(mdef['from'])
                 if verbose:
@@ -142,15 +139,14 @@ class Darknet(nn.Module):
             elif mtype == 'yolo':
                 output.append(module(x, img_size))
             layer_outputs.append(x if i in self.routs else [])
+
             if verbose:
                 print(i, x.shape)
 
         if self.training:
-            print (f'I M IN TRAIN {output[0].shape}')
             return output
 
         else:
-            print(f'I M IN TEST {len(output), len(output[0]), output[0][0].shape, output[0][1].shape}')
             io, p = zip(*output)  # inference output, training output
             return torch.cat(io, 1), p
 
@@ -164,10 +160,12 @@ def create_grids(self, img_size=416, ng=(13, 13), device='cpu', type=torch.float
     self.img_size = max(img_size)
     self.stride = self.img_size / max(ng)
     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
+    # print (f'values {ng} {img_size} {self.stride} {yv} {xv}')
 
     self.grid_xy = torch.stack((xv, yv), 2).to(device).type(type).view((1, 1, ny, nx, 2))
+    print (self.grid_xy)
     self.anchor_vec = self.anchors.to(device) / self.stride
-
+    print(self.anchor_vec)
     self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device).type(type)
 
     self.ng = torch.Tensor(ng).to(device)
