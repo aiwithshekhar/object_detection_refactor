@@ -163,7 +163,7 @@ def train():
                                   cache_images=opt.cache_images,
                                   single_cls=opt.single_cls)
 
-    # Dataloader
+    # Dataloader This is where dataloading starts
     batch_size = min(batch_size, len(dataset))
     nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
     print (f'traning info')
