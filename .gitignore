@@ -136,3 +136,4 @@ dmypy.json
 coco/
 weights/
 Data/
+*.swp
