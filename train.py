@@ -311,14 +311,9 @@ def train():
             if best_fitness == fi:
                 torch.save(chkpt, best)
 
-            # Save backup every 10 epochs (optional)
-            # if epoch > 0 and epoch % 10 == 0:
-            #     torch.save(chkpt, wdir + 'backup%g.pt' % epoch)
-
             # Delete checkpoint
             del chkpt
 
-        # end epoch ----------------------------------------------------------------------------------------------------
 
     # end training
     n = opt.name
